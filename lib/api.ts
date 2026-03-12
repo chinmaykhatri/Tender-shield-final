@@ -1,75 +1,38 @@
 /**
  * TenderShield — API Client
  * Centralized API functions for backend communication.
- * Includes demo mode fallback when backend is not available.
+ * Uses Next.js API routes backed by Supabase.
  */
 
 const API_BASE = '/api/v1';
-const AI_BASE = '/ai';
-
-// ========== Demo Mode Data ==========
-
-const DEMO_USERS = [
-  { email: 'officer@morth.gov.in', name: 'Rajesh Kumar (MoRTH)', role: 'OFFICER', org: 'MinistryOrg' },
-  { email: 'medtech@medtechsolutions.com', name: 'Priya Sharma (MedTech)', role: 'BIDDER', org: 'BidderOrg' },
-  { email: 'admin@biomedicorp.com', name: 'Shell Corp (BioMedi)', role: 'BIDDER', org: 'BidderOrg' },
-  { email: 'auditor@cag.gov.in', name: 'Amit Verma (CAG)', role: 'AUDITOR', org: 'AuditorOrg' },
-  { email: 'admin@nic.in', name: 'NIC Administrator', role: 'NIC_ADMIN', org: 'NICOrg' },
-];
-
-const ROLE_PASSWORDS: Record<string, string> = {
-  OFFICER: 'Tender@2025',
-  BIDDER: 'Bid@2025',
-  AUDITOR: 'Audit@2025',
-  NIC_ADMIN: 'Admin@2025',
-};
-
-function detectRole(email: string): { role: string; org: string; name: string } {
-  const demoUser = DEMO_USERS.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (demoUser) return { role: demoUser.role, org: demoUser.org, name: demoUser.name };
-
-  // For any other email, assign a default role
-  if (email.includes('gov.in')) return { role: 'OFFICER', org: 'MinistryOrg', name: email.split('@')[0] };
-  if (email.includes('cag')) return { role: 'AUDITOR', org: 'AuditorOrg', name: email.split('@')[0] };
-  if (email.includes('nic')) return { role: 'NIC_ADMIN', org: 'NICOrg', name: email.split('@')[0] };
-  return { role: 'BIDDER', org: 'BidderOrg', name: email.split('@')[0] };
-}
 
 // ========== Auth ==========
 
 export async function login(email: string, password: string) {
-  try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) throw new Error((await res.json()).detail || 'Login failed');
-    return res.json();
-  } catch {
-    // Demo mode fallback — works without backend
-    const { role, org, name } = detectRole(email);
-    return {
-      access_token: `demo_token_${Date.now()}`,
-      role,
-      org,
-      name,
-      demo_mode: true,
-    };
-  }
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Login failed');
+  return data;
+}
+
+export async function register(email: string, password: string, name: string, role?: string) {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name, role }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Registration failed');
+  return data;
 }
 
 export async function getDemoUsers() {
-  try {
-    const res = await fetch(`${API_BASE}/auth/demo-users`);
-    if (!res.ok) throw new Error('Backend unavailable');
-    return res.json();
-  } catch {
-    // Return hardcoded demo users when backend is not available
-    return {
-      demo_users: DEMO_USERS.map(u => ({ ...u, password: ROLE_PASSWORDS[u.role] || 'Demo@2025' })),
-    };
-  }
+  const res = await fetch(`${API_BASE}/auth/demo-users`);
+  return res.json();
 }
 
 export async function getCurrentUser(token: string) {
@@ -174,17 +137,55 @@ export async function getHealthCheck() {
 // ========== AI Engine ==========
 
 export async function runDemoAnalysis(scenario: string) {
-  const res = await fetch(`${AI_BASE}/demo/analyze`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scenario }),
-  });
-  return res.json();
+  // AI analysis runs client-side with demo data since AI engine isn't a separate service anymore
+  const demoResults: Record<string, any> = {
+    bid_rigging: {
+      success: true, scenario: 'bid_rigging', alert_id: `ALERT-${Date.now()}`,
+      analysis: {
+        tender_id: 'TDR-MoH-2025-000001', composite_risk_score: 62,
+        recommended_action: 'FREEZE', detectors_run: 3, convergence_bonus: 5,
+        flags: [
+          'LOW_BID_VARIANCE: Bids are suspiciously similar (CV=0.032)',
+          'BURST_SUBMISSION: 3 bids within 60s — possible coordination',
+          'COVER_BIDS: 1 intentionally high bid detected',
+        ],
+      },
+    },
+    shell_company: {
+      success: true, scenario: 'shell_company', alert_id: `ALERT-${Date.now()}`,
+      analysis: {
+        tender_id: 'TDR-MoRTH-2025-000001', composite_risk_score: 80,
+        recommended_action: 'ESCALATE_CAG', detectors_run: 3, convergence_bonus: 10,
+        flags: [
+          'RECENTLY_INCORPORATED: Company is only 6 months old',
+          'LOW_TURNOVER: Tender value is 45x company turnover',
+          'COMMON_DIRECTORS: 1 director linked to flagged companies',
+          'COMMON_ADDRESS: Shares address with flagged entities',
+        ],
+      },
+    },
+    clean: {
+      success: true, scenario: 'clean', alert_id: `ALERT-${Date.now()}`,
+      analysis: {
+        tender_id: 'TDR-MoE-2025-000001', composite_risk_score: 8,
+        recommended_action: 'MONITOR', detectors_run: 2, convergence_bonus: 0,
+        flags: ['No anomalies detected'],
+      },
+    },
+  };
+  return demoResults[scenario] || demoResults.clean;
 }
 
 export async function getDetectors() {
-  const res = await fetch(`${AI_BASE}/detectors`);
-  return res.json();
+  return {
+    detectors: [
+      { name: 'Bid Rigging', weight: 30 },
+      { name: 'Collusion Graph', weight: 25 },
+      { name: 'Shell Company', weight: 20 },
+      { name: 'Cartel Rotation', weight: 15 },
+      { name: 'Timing Anomaly', weight: 10 },
+    ],
+  };
 }
 
 // ========== Helpers ==========

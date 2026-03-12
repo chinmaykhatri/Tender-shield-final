@@ -2,15 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { login, getDemoUsers } from '@/lib/api';
+import { login, register, getDemoUsers } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login: storeLogin, isAuthenticated } = useAuthStore();
+  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('BIDDER');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [demoUsers, setDemoUsers] = useState<any[]>([]);
 
@@ -22,16 +26,28 @@ export default function LoginPage() {
     getDemoUsers().then(res => setDemoUsers(res.demo_users || [])).catch(() => {});
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
     try {
-      const res = await login(email, password);
-      storeLogin(res.access_token, res.role, res.org, res.name);
-      router.push('/dashboard');
+      if (isSignUp) {
+        const res = await register(email, password, name, role);
+        if (res.requires_verification) {
+          setSuccess('✅ Account created! Check your email to verify, then log in.');
+          setIsSignUp(false);
+        } else {
+          storeLogin(res.access_token, res.role, res.org, res.name);
+          router.push('/dashboard');
+        }
+      } else {
+        const res = await login(email, password);
+        storeLogin(res.access_token, res.role, res.org, res.name);
+        router.push('/dashboard');
+      }
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(err.message || (isSignUp ? 'Registration failed' : 'Login failed'));
     } finally {
       setLoading(false);
     }
@@ -40,6 +56,7 @@ export default function LoginPage() {
   const quickLogin = (userEmail: string, pwd: string) => {
     setEmail(userEmail);
     setPassword(pwd);
+    setIsSignUp(false);
   };
 
   const rolePasswords: Record<string, string> = {
@@ -77,11 +94,31 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Login Card */}
+        {/* Login/Register Card */}
         <div className="card-glass p-8">
-          <h2 className="text-xl font-semibold mb-1">Sign In</h2>
+          {/* Toggle Tabs */}
+          <div className="flex gap-1 mb-6 p-1 rounded-xl bg-[var(--bg-secondary)]">
+            <button
+              onClick={() => { setIsSignUp(false); setError(''); setSuccess(''); }}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                !isSignUp ? 'bg-[var(--accent)] text-white shadow-lg' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}>
+              🔐 Sign In
+            </button>
+            <button
+              onClick={() => { setIsSignUp(true); setError(''); setSuccess(''); }}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                isSignUp ? 'bg-[var(--accent)] text-white shadow-lg' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}>
+              ✨ Sign Up
+            </button>
+          </div>
+
           <p className="text-sm text-[var(--text-secondary)] mb-6">
-            Access the blockchain-secured procurement dashboard
+            {isSignUp 
+              ? 'Create your account to access the procurement dashboard'
+              : 'Access the blockchain-secured procurement dashboard'
+            }
           </p>
 
           {error && (
@@ -90,48 +127,77 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          {success && (
+            <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm">
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignUp && (
+              <div>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Full Name</label>
+                <input type="text" value={name} onChange={e => setName(e.target.value)}
+                  className="input-field" placeholder="e.g. Rajesh Kumar" required />
+              </div>
+            )}
             <div>
               <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Email</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                className="input-field" placeholder="officer@morth.gov.in" required />
+                className="input-field" placeholder="your@email.com" required />
             </div>
             <div>
               <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Password</label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                className="input-field" placeholder="••••••••" required />
+                className="input-field" placeholder="••••••••" required minLength={6} />
             </div>
+            {isSignUp && (
+              <div>
+                <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Role</label>
+                <select className="input-field" value={role} onChange={e => setRole(e.target.value)}>
+                  <option value="BIDDER">🏢 Bidder (Company)</option>
+                  <option value="OFFICER">🏛️ Government Officer</option>
+                  <option value="AUDITOR">🔍 CAG Auditor</option>
+                  <option value="NIC_ADMIN">🛡️ NIC Administrator</option>
+                </select>
+              </div>
+            )}
             <button type="submit" className="btn-primary w-full" disabled={loading}>
-              {loading ? '⏳ Authenticating...' : '🔐 Sign In with JWT'}
+              {loading 
+                ? '⏳ Please wait...' 
+                : isSignUp ? '✨ Create Account' : '🔐 Sign In'
+              }
             </button>
           </form>
         </div>
 
         {/* Demo Quick Login */}
-        <div className="card-glass p-6 mt-4">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-3">
-            🎯 Competition Demo — Quick Login
-          </h3>
-          <div className="space-y-2">
-            {demoUsers.map((u, i) => (
-              <button key={i}
-                onClick={() => quickLogin(u.email, rolePasswords[u.role] || 'Demo@2025')}
-                className="w-full text-left p-3 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-card-hover)] border border-transparent hover:border-[var(--border-glow)] transition-all text-sm flex items-center justify-between group">
-                <div>
-                  <span className="text-[var(--text-primary)] group-hover:text-[var(--accent)]">{u.name}</span>
-                  <span className="block text-xs text-[var(--text-secondary)]">{u.email}</span>
-                </div>
-                <span className={`badge ${u.role === 'OFFICER' ? 'badge-info' : u.role === 'BIDDER' ? 'badge-success' : u.role === 'AUDITOR' ? 'badge-warning' : 'badge-danger'}`}>
-                  {u.role}
-                </span>
-              </button>
-            ))}
+        {!isSignUp && (
+          <div className="card-glass p-6 mt-4">
+            <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-3">
+              🎯 Competition Demo — Quick Login
+            </h3>
+            <div className="space-y-2">
+              {demoUsers.map((u, i) => (
+                <button key={i}
+                  onClick={() => quickLogin(u.email, rolePasswords[u.role] || 'Demo@2025')}
+                  className="w-full text-left p-3 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-card-hover)] border border-transparent hover:border-[var(--border-glow)] transition-all text-sm flex items-center justify-between group">
+                  <div>
+                    <span className="text-[var(--text-primary)] group-hover:text-[var(--accent)]">{u.name}</span>
+                    <span className="block text-xs text-[var(--text-secondary)]">{u.email}</span>
+                  </div>
+                  <span className={`badge ${u.role === 'OFFICER' ? 'badge-info' : u.role === 'BIDDER' ? 'badge-success' : u.role === 'AUDITOR' ? 'badge-warning' : 'badge-danger'}`}>
+                    {u.role}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Footer */}
         <p className="text-center text-xs text-[var(--text-secondary)] mt-6 opacity-60">
-          Powered by Hyperledger Fabric · ZKP · AI Fraud Detection
+          Powered by Supabase · Hyperledger Fabric · ZKP · AI Fraud Detection
         </p>
       </div>
     </div>
